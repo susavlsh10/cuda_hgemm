@@ -52,34 +52,43 @@ using namespace nvcuda;
 
 __global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__restrict__ B, half *__restrict__ C,
                                       size_t M, size_t N, size_t K) {
+    // Calculate the number of tiles needed to cover the matrices in each dimension
     const size_t M_tiles = div_ceil(M, WMMA_M);
     const size_t N_tiles = div_ceil(N, WMMA_N);
     const size_t K_tiles = div_ceil(K, WMMA_K);
 
+    // Calculate the tile indices
     const size_t block_tile_i =
         (blockIdx.z % 2) ? ((gridDim.y - blockIdx.y - 1) * BLOCK_COL_TILES) : (blockIdx.y * BLOCK_COL_TILES);
     const size_t block_tile_j = (blockIdx.z * gridDim.x + blockIdx.x) * BLOCK_ROW_TILES;
 
+    // Check if the tile is within the boundary of the matrices
     if (block_tile_i >= M_tiles || block_tile_j >= N_tiles) {
         return;
     }
 
+    // Declare shared memory for storing tiles of the matrices
     extern __shared__ half smem[][AB_SMEM_STRIDE];
 
+    // Calculate the warp and lane indices
     const size_t warp_id = threadIdx.x / WARP_SIZE;
     const size_t lane_id = threadIdx.x % WARP_SIZE;
 
+    // Define offsets within the shared memory for different stages of the computation
     constexpr size_t B_smem_idx_off = BLOCK_ROWS;
     constexpr size_t smem_stage_off = BLOCK_ROWS + BLOCK_COLS;
 
+    // Define pointers for accessing shared memory tiles for the current warp
     half *smem_warp_tile_ptr = &smem[0][0] + (warp_id / BLOCK_ROW_WARPS) * C_SMEM_STRIDE * WARP_ROWS +
                                (warp_id % BLOCK_ROW_WARPS) * C_SMEM_OFFSET;
 
     half *smem_warp_stream_ptr = &smem[0][0] + warp_id * WMMA_M * 2 * C_SMEM_STRIDE;
 
+    // Calculate the global memory index for the current warp
     const size_t gmem_idx = (block_tile_i + warp_id * 2) * WMMA_M * N + block_tile_j * WMMA_N;
     half *src_gmem_warp_stream_ptr = &C[gmem_idx];
 
+    // Initialize the fragments for accumulation
     wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> C_frag[WARP_COL_TILES][WARP_ROW_TILES];
 
 #pragma unroll
@@ -90,12 +99,15 @@ __global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__
         }
     }
 
+    // Define pointers for accessing global memory tiles for A and B matrices
     const half *A_warp_ptr = &A[block_tile_i * WMMA_M * K] + BLOCK_ROWS / WARPS_PER_BLOCK * K * warp_id;
     const half *B_warp_ptr = &B[block_tile_j * WMMA_N * K] + BLOCK_COLS / WARPS_PER_BLOCK * K * warp_id;
 
+    // Calculate the number of iterations required for loading tiles into shared memory
     constexpr size_t A_smem_iters = BLOCK_ROWS / (CHUNK_COPY_LINES_PER_WARP * WARPS_PER_BLOCK);
     constexpr size_t B_smem_iters = BLOCK_COLS / (CHUNK_COPY_LINES_PER_WARP * WARPS_PER_BLOCK);
 
+    // initialize shared memory indices and offsets
     size_t smem_store_idx = 0;
     size_t smem_load_idx = 0;
 
@@ -108,10 +120,12 @@ __global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__
     size_t B_smem_idx = 0;
     int4 *B_lane_ptr = nullptr;
 
+    // Calculate initial shared memory indices and pointers for A matrix
     A_smem_idx = smem_store_off + BLOCK_ROWS / WARPS_PER_BLOCK * warp_id;
     A_lane_ptr = (int4 *)(A_warp_ptr + (lane_id / CHUNK_COPY_LINE_LANES) * K) + (lane_id % CHUNK_COPY_LINE_LANES);
     A_smem_idx += lane_id / CHUNK_COPY_LINE_LANES;
 
+    // Load A matrix tiles into shared memory using async copy
 #pragma unroll
     for (size_t i = 0; i < A_smem_iters; ++i) {
         uint32_t A_smem_lane_addr =
@@ -123,10 +137,12 @@ __global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__
         A_smem_idx += CHUNK_COPY_LINES_PER_WARP;
     }
 
+    // Calculate initial shared memory indices and pointers for B matrix
     B_smem_idx = smem_store_off + B_smem_idx_off + BLOCK_COLS / WARPS_PER_BLOCK * warp_id;
     B_lane_ptr = (int4 *)(B_warp_ptr + (lane_id / CHUNK_COPY_LINE_LANES) * K) + (lane_id % CHUNK_COPY_LINE_LANES);
     B_smem_idx += lane_id / CHUNK_COPY_LINE_LANES;
 
+    // Load B matrix tiles into shared memory using async copy
 #pragma unroll
     for (size_t i = 0; i < B_smem_iters; ++i) {
         uint32_t B_smem_lane_addr =
@@ -138,16 +154,20 @@ __global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__
         B_smem_idx += CHUNK_COPY_LINES_PER_WARP;
     }
 
+    // Commit async copy
     CP_ASYNC_COMMIT_GROUP();
 
+    // Update shared memory indices and pointers for double buffering
     smem_store_idx = (smem_store_idx + 1) % K_STAGE;
     smem_store_off = smem_store_idx * smem_stage_off;
 
+    // Repeat the process for the next set of tiles
     A_smem_idx = smem_store_off + BLOCK_ROWS / WARPS_PER_BLOCK * warp_id;
     A_lane_ptr = (int4 *)(A_warp_ptr + CHUNK_K * WMMA_K + (lane_id / CHUNK_COPY_LINE_LANES) * K) +
                  (lane_id % CHUNK_COPY_LINE_LANES);
     A_smem_idx += lane_id / CHUNK_COPY_LINE_LANES;
 
+    // Double Buffering 
 #pragma unroll
     for (size_t i = 0; i < A_smem_iters; ++i) {
         uint32_t A_smem_lane_addr =
@@ -175,14 +195,17 @@ __global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__
         B_smem_idx += CHUNK_COPY_LINES_PER_WARP;
     }
 
+    // Commit and wait for async copy to complete
     CP_ASYNC_COMMIT_GROUP();
     CP_ASYNC_WAIT_GROUP(1);
 
     __syncthreads();
 
+    // Initialize fragmets for A and B warp tiles
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> A_frag[2][WARP_COL_TILES];
     wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> B_frag[2][WARP_ROW_TILES];
 
+    // Load A and B warp tiles into fragments from shared memory
     size_t reg_store_idx = 0;
     size_t reg_load_idx = 1;
 
