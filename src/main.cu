@@ -150,8 +150,10 @@ int main(int argc, char *argv[]) {
           Tester tester(FLAGS_M, FLAGS_N, FLAGS_K, FLAGS_warmup_iterations, FLAGS_profiling_iterations, FLAGS_sleep_duration,
                   FLAGS_enable_check);
           tester.evaluate(cublasTensorOp, "Cublas-Tensor-Op");
+          //tester.print_results();
 
           tester.evaluate(wmmaAsyncStage3, "Wmma-Async-Stage3");
+          //tester.print_results();
      }
      
 

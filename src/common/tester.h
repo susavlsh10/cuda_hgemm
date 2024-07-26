@@ -89,6 +89,17 @@ public:
         profile(std::forward<Func>(hgemm), name);
     }
 
+    void print_results(){
+        // print the first ten elements of the result matrix
+        m_C->moveToHost();
+        HLOG("The first ten elements of the result matrix:");
+        for (size_t i = 0; i < 10; ++i) {
+            HLOG("%f", __half2float(m_C->getHostPtr()[i]));
+        }
+
+        HLOG("-------------------------------------------------");
+    }
+
 private:
     void cublas_tensor_op(half *A, half *B, half *C, size_t M, size_t N, size_t K) {
         cublasHandle_t handle = nullptr;
