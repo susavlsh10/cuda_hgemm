@@ -70,3 +70,24 @@ cuda_add_executable (hgemm ${HGEMM_SRCS})
 target_link_libraries (hgemm -lcublas OpenMP::OpenMP_CXX ${GFLAGS_LIBRARIES})
 
 install (TARGETS hgemm RUNTIME DESTINATION bin)
+
+# Common source files
+#file (GLOB COMMON_SRCS 
+#    #${PROJECT_SOURCE_DIR}/src/*.cu
+#    ${PROJECT_SOURCE_DIR}/src/cublas_tensor_op.cu
+#    ${PROJECT_SOURCE_DIR}/src/simt_native.cu
+#   ${PROJECT_SOURCE_DIR}/src/wmma/*.cu
+#    ${PROJECT_SOURCE_DIR}/src/mma/*.cu
+#)
+
+# Define first executable with main.cu
+#set(HGEMM_MAIN ${PROJECT_SOURCE_DIR}/src/main.cu)
+#cuda_add_executable (hgemm ${COMMON_SRCS} ${HGEMM_MAIN})
+#target_link_libraries (hgemm -lcublas OpenMP::OpenMP_CXX ${GFLAGS_LIBRARIES})
+#install (TARGETS hgemm RUNTIME DESTINATION bin)
+
+# Define second executable with selMatmul_main.cu
+#set(SEL_MATMUL_MAIN ${PROJECT_SOURCE_DIR}/src/selMatmul_main.cu)
+#cuda_add_executable (selMatmul ${COMMON_SRCS} ${SEL_MATMUL_MAIN})
+#target_link_libraries (selMatmul -lcublas OpenMP::OpenMP_CXX ${GFLAGS_LIBRARIES})
+#install (TARGETS selMatmul RUNTIME DESTINATION bin)

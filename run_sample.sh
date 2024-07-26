@@ -15,7 +15,7 @@ rm -rf log ncu && mkdir -p log ncu
 # $1: M. $2: N, $3: K
 evaluate_hgemm() {
     echo "Evaluating $1 * $2 * $3"
-    $WORK_PATH/output/bin/hgemm -M=$1 -N=$2 -K=$3 -enable_wmma=true -enable_mma=true -warmup_iterations=1 -profiling_iterations=10 -sleep_duration=100 -enable_check=false > log/hgemm_${1}_${2}_${3}.log 2>&1
+    $WORK_PATH/output/bin/hgemm -M=$1 -N=$2 -K=$3 --run_all_profiling=true -enable_wmma=true -enable_mma=true -warmup_iterations=1 -profiling_iterations=10 -sleep_duration=100 -enable_check=false > log/hgemm_${1}_${2}_${3}.log 2>&1
     sleep 3
 }
 

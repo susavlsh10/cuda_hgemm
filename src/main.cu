@@ -37,6 +37,9 @@ DEFINE_uint32(N, 2048, "N");
 DEFINE_uint32(K, 1024, "K");
 DEFINE_bool(enable_wmma, true, "test WMMA API");
 DEFINE_bool(enable_mma, true, "test MMA PTX instruction");
+
+DEFINE_bool(run_all_profiling, false, "run all profiling");
+
 DEFINE_uint32(warmup_iterations, 1, "warmup iteration numbers and average the result");
 DEFINE_uint32(profiling_iterations, 10, "profiling iteration numbers and average the result");
 DEFINE_uint32(sleep_duration, 100, "sleep_milliseconds between profiling");
@@ -44,8 +47,13 @@ DEFINE_bool(enable_check, false, "check the GPU result against the cublas result
 DEFINE_uint32(cpu_procs, omp_get_num_procs(), "processor num used of CPU");
 DEFINE_uint32(gpu_rank, 0, "the used GPU rank");
 
-int main(int argc, char *argv[]) {
-    GFLAGS_NAMESPACE::ParseCommandLineFlags(&argc, &argv, true);
+void run_hgemm_profiling(
+    size_t M, size_t N, size_t K,
+    bool enable_wmma, bool enable_mma,
+    unsigned int warmup_iterations, unsigned int profiling_iterations,
+    unsigned int sleep_duration, bool enable_check,
+    unsigned int cpu_procs, unsigned int gpu_rank)
+{
 
     omp_set_num_threads(FLAGS_cpu_procs);
     HGEMM_CHECK_CUDART_ERROR(cudaSetDevice(FLAGS_gpu_rank));
@@ -123,9 +131,31 @@ int main(int argc, char *argv[]) {
         tester.evaluate(mmaAsyncStage4, "Mma-Async-Stage4");
     }
 
-    GFLAGS_NAMESPACE::ShutDownCommandLineFlags();
-
     HLOG("Done");
+}
 
-    return 0;
+
+int main(int argc, char *argv[]) {
+     GFLAGS_NAMESPACE::ParseCommandLineFlags(&argc, &argv, true);
+
+     omp_set_num_threads(FLAGS_cpu_procs);
+
+     if (FLAGS_run_all_profiling){
+          run_hgemm_profiling(FLAGS_M, FLAGS_N, FLAGS_K, FLAGS_enable_wmma, FLAGS_enable_mma, FLAGS_warmup_iterations,
+                              FLAGS_profiling_iterations, FLAGS_sleep_duration, FLAGS_enable_check, FLAGS_cpu_procs,
+                              FLAGS_gpu_rank);
+     }
+     else{
+          // Test Selective MatMul accuracy, latency, and throughput
+          Tester tester(FLAGS_M, FLAGS_N, FLAGS_K, FLAGS_warmup_iterations, FLAGS_profiling_iterations, FLAGS_sleep_duration,
+                  FLAGS_enable_check);
+          tester.evaluate(cublasTensorOp, "Cublas-Tensor-Op");
+
+          tester.evaluate(wmmaAsyncStage3, "Wmma-Async-Stage3");
+     }
+     
+
+     GFLAGS_NAMESPACE::ShutDownCommandLineFlags();
+     printf(" *==== Done ====* \n");
+     return 0;
 }

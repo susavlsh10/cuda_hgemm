@@ -50,7 +50,7 @@
 
 using namespace nvcuda;
 
-__global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__restrict__ B, half *__restrict__ C,
+__global__ void SelwmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__restrict__ B, half *__restrict__ C, int16_t* index_vec,
                                       size_t M, size_t N, size_t K) { // int* index_vec
     // Calculate the number of tiles needed to cover the matrices in each dimension
     const size_t M_tiles = div_ceil(M, WMMA_M);
@@ -469,7 +469,7 @@ __global__ void wmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__
     }
 }
 
-size_t initWmmaAsyncStage3() {
+size_t initSelWmmaAsyncStage3() {
     int dev_id = 0;
     HGEMM_CHECK_CUDART_ERROR(cudaGetDevice(&dev_id));
 
@@ -482,16 +482,20 @@ size_t initWmmaAsyncStage3() {
 
     HGEMM_CHECK_GT(dev_prop.sharedMemPerMultiprocessor, smem_max_size);
     HGEMM_CHECK_CUDART_ERROR(
-        cudaFuncSetAttribute(wmmaAsyncStage3Kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_max_size));
+        cudaFuncSetAttribute(SelwmmaAsyncStage3Kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_max_size));
 
     return smem_max_size;
 }
 
-void wmmaAsyncStage3(half *A, half *B, half *C, size_t M, size_t N, size_t K) {
-    static size_t smem_max_size = initWmmaAsyncStage3();
+void SelwmmaAsyncStage3(half *A, half *B, half *C, int16_t* index_vec, size_t M, size_t N, size_t K) {
+    /*
+    index_vec: selects which neurons in B to activate
+                selects rows/cols in B to use for MatMul
+    */
+    static size_t smem_max_size = initSelWmmaAsyncStage3();
 
     dim3 block(THREADS_PER_BLOCK);
     dim3 grid(BLOCK_STRIDE, div_ceil(M, BLOCK_ROWS), div_ceil(N, BLOCK_COLS * BLOCK_STRIDE));
 
-    wmmaAsyncStage3Kernel<<<grid, block, smem_max_size>>>(A, B, C, M, N, K);
+    SelwmmaAsyncStage3Kernel<<<grid, block, smem_max_size>>>(A, B, C, index_vec, M, N, K);
 }
