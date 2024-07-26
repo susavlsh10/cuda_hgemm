@@ -50,8 +50,14 @@
 
 using namespace nvcuda;
 
+#define A_(i)
+
 __global__ void SelwmmaAsyncStage3Kernel(const half *__restrict__ A, const half *__restrict__ B, half *__restrict__ C, int16_t* index_vec,
                                       size_t M, size_t N, size_t K) { // int* index_vec
+    /*
+    index_vec is used to access rows of A for a selective matmul
+    
+    */
     // Calculate the number of tiles needed to cover the matrices in each dimension
     const size_t M_tiles = div_ceil(M, WMMA_M);
     const size_t N_tiles = div_ceil(N, WMMA_N);
